@@ -1,0 +1,50 @@
+:root {
+  --ink: #12141a;
+  --ink-soft: #3d4450;
+  --muted: #6b7280;
+  --line: #d8dde6;
+  --panel: #ffffff;
+  --accent: #0d7a6f;
+  --accent-hover: #0a635a;
+  --accent-disabled: #9bb8b4;
+  --ok: #0f7a3e;
+  --warn: #9a6700;
+  --bad: #b42318;
+  --shadow: 0 18px 40px rgba(18, 20, 26, 0.08);
+  --radius: 14px;
+  --font: 'DM Sans', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #dce8e6 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #e8e4dc 0%, transparent 50%),
+    linear-gradient(180deg, #eef1f5 0%, #e6eaef 100%);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+a {
+  color: var(--accent);
+}

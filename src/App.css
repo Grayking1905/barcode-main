@@ -1,0 +1,607 @@
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 2.5rem 1.25rem 3rem;
+}
+
+.shell {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.header {
+  text-align: left;
+}
+
+.brand {
+  margin: 0 0 0.35rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.header h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 4vw, 2.1rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.subtitle {
+  margin: 0.65rem 0 0;
+  max-width: 46ch;
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+/* ── Browser support warning ─────────────────────────────────────────────── */
+
+.warn-banner {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  background: rgba(180, 35, 24, 0.06);
+  border: 1px solid rgba(180, 35, 24, 0.25);
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.warn-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+
+.warn-banner strong {
+  color: var(--bad);
+}
+
+/* ── Connect panel ───────────────────────────────────────────────────────── */
+
+.connect-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.75rem 1.5rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.connect-header {
+  text-align: center;
+}
+
+.connect-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+  filter: grayscale(0.1);
+}
+
+.connect-title {
+  margin: 0 0 0.3rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.connect-sub {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+/* ── Connect method buttons ──────────────────────────────────────────────── */
+
+.connect-methods {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.connect-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  padding: 1rem 1.1rem;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.connect-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: rgba(13, 122, 111, 0.03);
+  box-shadow: 0 0 0 3px rgba(13, 122, 111, 0.12);
+}
+
+.connect-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.connect-btn-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.connect-btn-highlighted {
+  border-color: var(--accent) !important;
+  background: rgba(13, 122, 111, 0.04) !important;
+  box-shadow: 0 0 0 3px rgba(13, 122, 111, 0.18) !important;
+  animation: highlightPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes highlightPulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(13, 122, 111, 0.18) }
+  50%       { box-shadow: 0 0 0 6px rgba(13, 122, 111, 0.08) }
+}
+
+.connect-btn-tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1em 0.45em;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  animation: tagPop 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes tagPop {
+  from { transform: scale(0.7); opacity: 0 }
+  to   { transform: scale(1);   opacity: 1 }
+}
+
+.connect-btn-icon {
+  font-size: 1.55rem;
+  flex-shrink: 0;
+}
+
+.connect-btn-label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.connect-btn-label strong {
+  font-size: 0.97rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.connect-btn-label small {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.connect-btn-arrow {
+  font-size: 1rem;
+  color: var(--accent);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.connect-btn:hover:not(:disabled) .connect-btn-arrow {
+  opacity: 1;
+  transform: translateX(3px);
+}
+
+.connect-note {
+  margin: 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* ── Connect how-to explainer ────────────────────────────────────────────── */
+
+.connect-howto {
+  background: #f6f8fa;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+
+.howto-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.connect-howto ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.connect-howto strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ── Connecting spinner state ────────────────────────────────────────────── */
+
+.connecting-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 2.5rem 1.5rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.connecting-hint {
+  font-size: 0.83rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid rgba(13, 122, 111, 0.18);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-bottom: 0.25rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg) }
+}
+
+/* ── Printer status bar (when connected) ─────────────────────────────────── */
+
+.printer-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.9rem;
+  background: rgba(15, 122, 62, 0.05);
+  border: 1px solid rgba(15, 122, 62, 0.3);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(15, 122, 62, 0.18);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(15, 122, 62, 0.18) }
+  50%       { box-shadow: 0 0 0 6px rgba(15, 122, 62, 0.08) }
+}
+
+.status-printer-name {
+  flex: 1;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(13, 122, 111, 0.1);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.disconnect-btn {
+  flex-shrink: 0;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid rgba(15, 122, 62, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ok);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.disconnect-btn:hover {
+  background: rgba(15, 122, 62, 0.08);
+}
+
+/* ── Controls panel ──────────────────────────────────────────────────────── */
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1.15rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.field-label {
+  margin-top: 0.55rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.field-label:first-child {
+  margin-top: 0;
+}
+
+.barcode-input,
+.select-input {
+  width: 100%;
+  padding: 0.85rem 0.95rem;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.barcode-input {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+}
+
+.barcode-input:focus,
+.select-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(13, 122, 111, 0.18);
+}
+
+/* ── Print button ────────────────────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+}
+
+.print-btn {
+  width: 100%;
+  padding: 0.95rem 1.25rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.print-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.print-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.print-btn:disabled {
+  background: var(--accent-disabled);
+  cursor: not-allowed;
+}
+
+/* ── Messages ────────────────────────────────────────────────────────────── */
+
+.message {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink-soft);
+}
+
+.message-ok {
+  color: var(--ok);
+  border-color: rgba(15, 122, 62, 0.35);
+  background: rgba(15, 122, 62, 0.05);
+}
+
+.message-err {
+  color: var(--bad);
+  border-color: rgba(180, 35, 24, 0.35);
+  background: rgba(180, 35, 24, 0.05);
+}
+
+/* ── Tips aside ──────────────────────────────────────────────────────────── */
+
+.tips {
+  padding: 1.15rem 1.2rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+}
+
+.tips h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.tips ol,
+.tips ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.tips strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ── Driver Setup Guide ─────────────────────────────────────────────────── */
+
+.guide-toggle-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.25rem;
+}
+
+.guide-toggle-btn {
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.guide-toggle-btn:hover {
+  border-color: var(--accent);
+  background: rgba(13, 122, 111, 0.05);
+}
+
+.driver-guide-card {
+  background: #fff;
+  border: 1.5px solid #e1e4e8;
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  padding: 1.25rem 1.35rem;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.guide-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.guide-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.guide-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.guide-desc {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.guide-desc code,
+.guide-linux-note code,
+.guide-steps code {
+  background: #f1f3f5;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.85em;
+  color: #1a202c;
+  word-break: break-all;
+}
+
+.guide-steps h4 {
+  margin: 0.75rem 0 0.4rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.guide-steps ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.guide-steps ol strong {
+  color: var(--ink);
+}
+
+.guide-linux-note,
+.guide-alt-note {
+  margin: 0.3rem 0 0;
+  font-size: 0.83rem;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
