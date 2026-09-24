@@ -228,7 +228,10 @@ export default function App() {
 
     for (const url of candidates) {
       try {
-        const res = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(1200) })
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 1500)
+        const res = await fetch(`${url}/api/health`, { signal: controller.signal })
+        clearTimeout(timer)
         if (res.ok) return url
       } catch {}
     }
@@ -313,7 +316,7 @@ export default function App() {
         '• Make sure the agent is running in terminal:\n' +
         '    Linux:   chmod +x start-agent.sh && ./start-agent.sh\n' +
         '    Windows: double-click start-agent.bat\n' +
-        '• In browser: ensure you allow access to local network if prompted.',
+        '• Or open http://localhost:47474 directly in your browser (no HTTPS mixed-content restrictions)!',
       )
     }
   }, [getAgentUrl])

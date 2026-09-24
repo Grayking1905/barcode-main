@@ -39,11 +39,15 @@
 
 import http from 'node:http'
 import { execFile } from 'node:child_process'
-import { mkdtemp, writeFile, rm, readdir, open, access } from 'node:fs/promises'
+import { mkdtemp, writeFile, readFile, rm, readdir, open, access } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const DIST_DIR  = path.resolve(__dirname, '..', 'dist')
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -914,6 +918,48 @@ async function handleRequest(req, res) {
       sendJson(res, 500, { ok: false, error: err.message }, origin)
     }
     return
+  }
+
+  // ── Static Web UI (serves dist folder so users can open http://localhost:47474) ─
+  if (!pathname.startsWith('/api') && (method === 'GET' || method === 'HEAD')) {
+    const relPath = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '')
+    let filePath  = path.resolve(DIST_DIR, relPath)
+
+    if (filePath.startsWith(DIST_DIR)) {
+      try {
+        let fileData
+        try {
+          fileData = await readFile(filePath)
+        } catch {
+          // SPA fallback to index.html
+          filePath = path.resolve(DIST_DIR, 'index.html')
+          fileData = await readFile(filePath)
+        }
+
+        const ext = path.extname(filePath).toLowerCase()
+        const mimeTypes = {
+          '.html': 'text/html; charset=utf-8',
+          '.js':   'text/javascript; charset=utf-8',
+          '.css':  'text/css; charset=utf-8',
+          '.svg':  'image/svg+xml',
+          '.json': 'application/json',
+          '.png':  'image/png',
+          '.ico':  'image/x-icon',
+          '.wasm': 'application/wasm',
+        }
+
+        res.writeHead(200, {
+          'Content-Type':   mimeTypes[ext] || 'application/octet-stream',
+          'Content-Length': fileData.length,
+          ...corsHeaders(origin),
+        })
+        if (method === 'HEAD') res.end()
+        else res.end(fileData)
+        return
+      } catch {
+        // dist folder missing, fallback to 404
+      }
+    }
   }
 
   // ── 404 ────────────────────────────────────────────────────────────────────
