@@ -8,7 +8,7 @@
  * ENDPOINTS
  *   GET  /api/health           → liveness check
  *   GET  /api/printers         → list system spooler printers (Windows / CUPS)
- *   GET  /api/usb-devices      → list raw USB printer device paths (Linux only)
+ *   GET  /api/usb-devices      → list USB printers (SetupDi GUID_DEVINTERFACE_USBPRINT on Windows; /dev/usb/lp* on Linux)
  *   POST /api/print            → send raw ZPL / EPL / TSPL via spooler
  *   POST /api/print-usb        → send raw commands to a USB device path (Linux)
  *   POST /api/print-usb-win    → send raw commands to USB via Windows WriteFile
@@ -188,11 +188,69 @@ async function printLinuxUsb(devicePath, commands) {
  */
 const RAW_USB_CS = `
 using System;
-using System.IO;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Win32.SafeHandles;
 
 public class WinUsbRaw {
+  // GUID_DEVINTERFACE_USBPRINT — well-known USB print interface class
+  static readonly Guid GUID_DEVINTERFACE_USBPRINT =
+    new Guid(0x28d78fad, 0x5a12, 0x11d1, 0xae, 0x5b, 0x00, 0x00, 0xf8, 0x03, 0xa8, 0xc2);
+
+  const uint DIGCF_PRESENT         = 0x00000002;
+  const uint DIGCF_DEVICEINTERFACE = 0x00000010;
+  const uint GENERIC_WRITE         = 0x40000000;
+  const uint FILE_SHARE_READ       = 0x00000001;
+  const uint FILE_SHARE_WRITE      = 0x00000002;
+  const uint OPEN_EXISTING         = 3;
+
+  [StructLayout(LayoutKind.Sequential)]
+  struct SP_DEVICE_INTERFACE_DATA {
+    public int cbSize;
+    public Guid InterfaceClassGuid;
+    public int Flags;
+    public IntPtr Reserved;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  struct SP_DEVINFO_DATA {
+    public int cbSize;
+    public Guid ClassGuid;
+    public int DevInst;
+    public IntPtr Reserved;
+  }
+
+  [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
+  static extern IntPtr SetupDiGetClassDevs(
+    ref Guid ClassGuid, IntPtr Enumerator, IntPtr hwndParent, uint Flags);
+
+  [DllImport("setupapi.dll", SetLastError = true)]
+  static extern bool SetupDiEnumDeviceInterfaces(
+    IntPtr DeviceInfoSet, IntPtr DeviceInfoData, ref Guid InterfaceClassGuid,
+    uint MemberIndex, ref SP_DEVICE_INTERFACE_DATA DeviceInterfaceData);
+
+  [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
+  static extern bool SetupDiGetDeviceInterfaceDetail(
+    IntPtr DeviceInfoSet, ref SP_DEVICE_INTERFACE_DATA DeviceInterfaceData,
+    IntPtr DeviceInterfaceDetailData, int DeviceInterfaceDetailDataSize,
+    out int RequiredSize, IntPtr DeviceInfoData);
+
+  [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
+  static extern bool SetupDiGetDeviceInterfaceDetail(
+    IntPtr DeviceInfoSet, ref SP_DEVICE_INTERFACE_DATA DeviceInterfaceData,
+    IntPtr DeviceInterfaceDetailData, int DeviceInterfaceDetailDataSize,
+    out int RequiredSize, ref SP_DEVINFO_DATA DeviceInfoData);
+
+  [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
+  static extern bool SetupDiGetDeviceRegistryProperty(
+    IntPtr DeviceInfoSet, ref SP_DEVINFO_DATA DeviceInfoData,
+    uint Property, out uint PropertyRegDataType,
+    byte[] PropertyBuffer, int PropertyBufferSize, out int RequiredSize);
+
+  [DllImport("setupapi.dll", SetLastError = true)]
+  static extern bool SetupDiDestroyDeviceInfoList(IntPtr DeviceInfoSet);
+
   [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
   static extern SafeFileHandle CreateFile(
     string lpFileName, uint dwDesiredAccess, uint dwShareMode,
@@ -204,10 +262,78 @@ public class WinUsbRaw {
     uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten,
     IntPtr lpOverlapped);
 
-  const uint GENERIC_WRITE    = 0x40000000;
-  const uint FILE_SHARE_READ  = 0x00000001;
-  const uint FILE_SHARE_WRITE = 0x00000002;
-  const uint OPEN_EXISTING    = 3;
+  const uint SPDRP_FRIENDLYNAME = 0x0000000C;
+  const uint SPDRP_DEVICEDESC   = 0x00000000;
+
+  /// <summary>
+  /// Dynamically enumerate all present USB printer device interfaces
+  /// via GUID_DEVINTERFACE_USBPRINT (SetupDi*). Returns path|name|openable
+  /// lines so PowerShell can parse without hard-coded registry walks.
+  /// </summary>
+  public static string[] ListUsbPrintDevices() {
+    var results = new List<string>();
+    Guid guid = GUID_DEVINTERFACE_USBPRINT;
+    IntPtr infoSet = SetupDiGetClassDevs(
+      ref guid, IntPtr.Zero, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+    if (infoSet == IntPtr.Zero || infoSet == new IntPtr(-1)) return results.ToArray();
+
+    try {
+      uint index = 0;
+      while (true) {
+        var ifData = new SP_DEVICE_INTERFACE_DATA();
+        ifData.cbSize = Marshal.SizeOf(typeof(SP_DEVICE_INTERFACE_DATA));
+        if (!SetupDiEnumDeviceInterfaces(infoSet, IntPtr.Zero, ref guid, index, ref ifData))
+          break;
+        index++;
+
+        int required = 0;
+        SetupDiGetDeviceInterfaceDetail(
+          infoSet, ref ifData, IntPtr.Zero, 0, out required, IntPtr.Zero);
+        if (required <= 0) continue;
+
+        IntPtr detailBuf = Marshal.AllocHGlobal(required);
+        try {
+          // cbSize: 8 on 64-bit (4 + packing), 6 on 32-bit (4 + 2 TCHAR)
+          Marshal.WriteInt32(detailBuf, IntPtr.Size == 8 ? 8 : 6);
+
+          var devInfo = new SP_DEVINFO_DATA();
+          devInfo.cbSize = Marshal.SizeOf(typeof(SP_DEVINFO_DATA));
+
+          if (!SetupDiGetDeviceInterfaceDetail(
+                infoSet, ref ifData, detailBuf, required, out required, ref devInfo))
+            continue;
+
+          // DevicePath string starts after the cbSize DWORD (offset 4)
+          string devicePath = Marshal.PtrToStringAuto(new IntPtr(detailBuf.ToInt64() + 4));
+          if (string.IsNullOrEmpty(devicePath)) continue;
+
+          string name = GetDeviceProperty(infoSet, ref devInfo, SPDRP_FRIENDLYNAME)
+                     ?? GetDeviceProperty(infoSet, ref devInfo, SPDRP_DEVICEDESC)
+                     ?? "USB Printer";
+          bool openable = TestDevice(devicePath);
+          // path + TAB + name + TAB + openable — easy for PowerShell to split
+          // (escape carefully: this string is embedded in a JS template literal)
+          results.Add(devicePath + "\\t" + name + "\\t" + (openable ? "1" : "0"));
+        } finally {
+          Marshal.FreeHGlobal(detailBuf);
+        }
+      }
+    } finally {
+      SetupDiDestroyDeviceInfoList(infoSet);
+    }
+    return results.ToArray();
+  }
+
+  static string GetDeviceProperty(IntPtr infoSet, ref SP_DEVINFO_DATA devInfo, uint prop) {
+    uint regType;
+    int needed;
+    byte[] buf = new byte[1024];
+    if (!SetupDiGetDeviceRegistryProperty(
+          infoSet, ref devInfo, prop, out regType, buf, buf.Length, out needed))
+      return null;
+    // Use (char)0 — not '\\0' — so the JS template literal does not swallow the escape
+    return Encoding.Unicode.GetString(buf, 0, Math.Max(0, needed - 2)).TrimEnd((char)0);
+  }
 
   public static string SendToDevice(string devicePath, byte[] data) {
     var handle = CreateFile(devicePath, GENERIC_WRITE,
@@ -246,50 +372,57 @@ async function listWindowsUsbPrinterPorts() {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'lp-usblist-'))
   const scriptPath = path.join(dir, 'list.ps1')
   try {
+    // Enumerate live device interfaces via SetupDi + GUID_DEVINTERFACE_USBPRINT
+    // (no hardcoded registry path / USB00x guessing). Fallback to PnP / printer ports.
     const script = `
 Add-Type -TypeDefinition @'
 ${RAW_USB_CS}
 '@
 $results = @()
-$guid = '{28d78fad-5a12-11d1-ae5b-0000f803a8c2}'
-$regPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceClasses\\$guid"
-Get-ChildItem -Path $regPath -ErrorAction SilentlyContinue | ForEach-Object {
-  $rawName = $_.PSChildName
-  $devPath = $rawName -replace '^##\\?#', '\\\\?\\'
-  $pnp = Get-ItemProperty -Path $_.PSPath
-  $instId = $pnp.DeviceInstance
-  $friendly = (Get-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Enum\\$instId" -ErrorAction SilentlyContinue).FriendlyName
-  $isOpenable = [WinUsbRaw]::TestDevice($devPath)
-  $results += [PSCustomObject]@{
-    path = $devPath
-    name = if ($friendly) { $friendly } else { "USB Printer" }
-    type = "usb-direct"
-    openable = $isOpenable
+
+# 1) Dynamic SetupAPI enumeration (GUID_DEVINTERFACE_USBPRINT)
+try {
+  $lines = [WinUsbRaw]::ListUsbPrintDevices()
+  foreach ($line in $lines) {
+    if (-not $line) { continue }
+    $parts = $line -split [char]9, 3
+    if ($parts.Count -lt 1 -or -not $parts[0]) { continue }
+    $results += [PSCustomObject]@{
+      path     = $parts[0]
+      name     = if ($parts.Count -gt 1 -and $parts[1]) { $parts[1] } else { "USB Printer" }
+      type     = "usb-direct"
+      openable = if ($parts.Count -gt 2) { $parts[2] -eq "1" } else { $false }
+    }
   }
+} catch {
+  Write-Error $_.Exception.Message
 }
 
+# 2) Fallback: usbprint.sys PnP devices (path may not be openable until SetupDi finds it)
 if ($results.Count -eq 0) {
   try {
     Get-PnpDevice -Class USB -ErrorAction SilentlyContinue | Where-Object { $_.Service -eq 'usbprint' } | ForEach-Object {
       $results += [PSCustomObject]@{
-        path = "USBPRINT:" + $_.InstanceId
-        name = if ($_.FriendlyName) { $_.FriendlyName } else { "USB Printer" }
-        type = "usb-direct"
+        path     = "USBPRINT:" + $_.InstanceId
+        name     = if ($_.FriendlyName) { $_.FriendlyName } else { "USB Printer" }
+        type     = "usb-direct"
         openable = $false
       }
     }
   } catch {}
 }
 
+# 3) Fallback: Windows USB printer ports (\\\\.\\USB001 style)
 if ($results.Count -eq 0) {
   try {
     $pp = Get-PrinterPort -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "USB*" }
     foreach ($p in $pp) {
+      $devPath = "\\\\.\\" + $p.Name
       $results += [PSCustomObject]@{
-        path = "\\\\.\\" + $p.Name
-        name = if ($p.Description) { $p.Description } else { "USB Printer Port (" + $p.Name + ")" }
-        type = "usbport"
-        openable = $false
+        path     = $devPath
+        name     = if ($p.Description) { $p.Description } else { "USB Printer Port (" + $p.Name + ")" }
+        type     = "usbport"
+        openable = [WinUsbRaw]::TestDevice($devPath)
       }
     }
   } catch {}
@@ -769,11 +902,14 @@ async function handleRequest(req, res) {
           }
         }
 
-        // 2. Try all auto-detected USB direct devices
+        // 2. Try all auto-detected USB direct devices (openable GUID_DEVINTERFACE_USBPRINT first)
         if (!usedMethod) {
           const usbDevices = await listUsbDevices()
-          for (const dev of usbDevices) {
-            if (!dev.path || !dev.path.startsWith('\\\\?\\')) continue
+          const ordered = [
+            ...usbDevices.filter((d) => d.openable && d.path?.startsWith('\\\\?\\')),
+            ...usbDevices.filter((d) => !d.openable && d.path?.startsWith('\\\\?\\')),
+          ]
+          for (const dev of ordered) {
             try {
               await printWindowsUsb(dev.path, commands)
               usedMethod = `usb:${dev.path}`

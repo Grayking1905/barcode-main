@@ -254,9 +254,14 @@ export default function App() {
       if (!res.ok) throw new Error(`Agent HTTP ${res.status}`)
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'USB device scan failed.')
-      const devices: Array<{path: string; name: string}> = data.devices || []
-      const devicePath = devices.length > 0 ? devices[0].path : ''
-      const deviceName = devices.length > 0 ? devices[0].name : ''
+      const devices: Array<{ path: string; name: string; openable?: boolean }> = data.devices || []
+      // Prefer a live/openable USBPRINT interface path over fallbacks
+      const preferred =
+        devices.find((d) => d.openable && d.path?.startsWith('\\\\?\\')) ||
+        devices.find((d) => d.path?.startsWith('\\\\?\\')) ||
+        devices[0]
+      const devicePath = preferred?.path || ''
+      const deviceName = preferred?.name || ''
       const label = deviceName || (devicePath ? `USB: ${devicePath}` : 'Zebra Printer (auto-detect)')
       updateConn({ kind: 'agent-usb', agentUrl, devicePath }, label)
       setLang('EPL')
