@@ -256,13 +256,16 @@ export default function App() {
       if (!data.ok) throw new Error(data.error || 'USB device scan failed.')
       const devices: Array<{path: string; name: string}> = data.devices || []
       const devicePath = devices.length > 0 ? devices[0].path : ''
-      const label = devicePath ? `USB Port: ${devicePath}` : 'Zebra Printer (auto-detect)'
+      const deviceName = devices.length > 0 ? devices[0].name : ''
+      const label = deviceName || (devicePath ? `USB: ${devicePath}` : 'Zebra Printer (auto-detect)')
       updateConn({ kind: 'agent-usb', agentUrl, devicePath }, label)
       setLang('EPL')
       setMessage(
-        devicePath
-          ? `✅ Agent connected to ${devicePath}`
-          : '✅ Agent connected — will auto-detect USB port on print',
+        deviceName
+          ? `✅ Agent connected to ${deviceName}`
+          : devicePath
+            ? `✅ Agent connected to ${devicePath}`
+            : '✅ Agent connected — will auto-detect USB port on print',
       )
     } catch (err) {
       setPhase('disconnected')

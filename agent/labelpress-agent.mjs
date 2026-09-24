@@ -231,18 +231,13 @@ public class WinUsbRaw {
     }
   }
 
-  // Probe \\.\USB001 through \\.\USB020; returns port names that can be opened
-  public static string[] ListUsbPorts() {
-    var found = new System.Collections.Generic.List<string>();
-    for (int i = 1; i <= 20; i++) {
-      string portNum = i.ToString("D3");
-      string p = @"\\.\USB" + portNum;
-      var h = CreateFile(p, GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-      if (!h.IsInvalid) { found.Add("USB" + portNum); h.Close(); }
-    }
-    return found.ToArray();
+  public static bool TestDevice(string devicePath) {
+    var handle = CreateFile(devicePath, GENERIC_WRITE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE,
+      IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+    if (handle.IsInvalid) return false;
+    handle.Close();
+    return true;
   }
 }
 `
@@ -251,43 +246,70 @@ async function listWindowsUsbPrinterPorts() {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'lp-usblist-'))
   const scriptPath = path.join(dir, 'list.ps1')
   try {
-    // Three detection methods combined:
-    //   1. Get-PrinterPort  — registered USB spooler ports (USB001 etc.)
-    //   2. Get-Printer      — port names from installed printers
-    //   3. CreateFile probe — works even with no spooler entry (raw usbprint.sys)
     const script = `
-$ports = @()
-try {
-  $pp = Get-PrinterPort -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "USB*" }
-  foreach ($p in $pp) { if ($ports -notcontains $p.Name) { $ports += $p.Name } }
-} catch {}
-try {
-  Get-Printer -ErrorAction SilentlyContinue | ForEach-Object {
-    if ($_.PortName -like "USB*" -and ($ports -notcontains $_.PortName)) { $ports += $_.PortName }
-  }
-} catch {}
 Add-Type -TypeDefinition @'
 ${RAW_USB_CS}
 '@
-try {
-  $raw = [WinUsbRaw]::ListUsbPorts()
-  foreach ($p in $raw) { if ($ports -notcontains $p) { $ports += $p } }
-} catch {}
-if ($ports.Count -eq 0) { Write-Output "NONE" }
-else { $ports | ForEach-Object { Write-Output $_ } }
+$results = @()
+$guid = '{28d78fad-5a12-11d1-ae5b-0000f803a8c2}'
+$regPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceClasses\\$guid"
+Get-ChildItem -Path $regPath -ErrorAction SilentlyContinue | ForEach-Object {
+  $rawName = $_.PSChildName
+  $devPath = $rawName -replace '^##\\?#', '\\\\?\\'
+  $pnp = Get-ItemProperty -Path $_.PSPath
+  $instId = $pnp.DeviceInstance
+  $friendly = (Get-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Enum\\$instId" -ErrorAction SilentlyContinue).FriendlyName
+  $isOpenable = [WinUsbRaw]::TestDevice($devPath)
+  $results += [PSCustomObject]@{
+    path = $devPath
+    name = if ($friendly) { $friendly } else { "USB Printer" }
+    type = "usb-direct"
+    openable = $isOpenable
+  }
+}
+
+if ($results.Count -eq 0) {
+  try {
+    Get-PnpDevice -Class USB -ErrorAction SilentlyContinue | Where-Object { $_.Service -eq 'usbprint' } | ForEach-Object {
+      $results += [PSCustomObject]@{
+        path = "USBPRINT:" + $_.InstanceId
+        name = if ($_.FriendlyName) { $_.FriendlyName } else { "USB Printer" }
+        type = "usb-direct"
+        openable = $false
+      }
+    }
+  } catch {}
+}
+
+if ($results.Count -eq 0) {
+  try {
+    $pp = Get-PrinterPort -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "USB*" }
+    foreach ($p in $pp) {
+      $results += [PSCustomObject]@{
+        path = "\\\\.\\" + $p.Name
+        name = if ($p.Description) { $p.Description } else { "USB Printer Port (" + $p.Name + ")" }
+        type = "usbport"
+        openable = $false
+      }
+    }
+  } catch {}
+}
+
+$results | ConvertTo-Json -Compress
 `
     await writeFile(scriptPath, script, 'utf8')
-    const { stdout } = await run('powershell.exe', [
+    const { stdout, stderr } = await run('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath,
     ])
-    const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-    if (lines[0] === 'NONE' || lines.length === 0) return []
-    return lines.map(port => ({ path: `\\\\.\\${port}`, type: 'usbport', name: `USB Printer Port (${port})` }))
+    if (stderr && stderr.trim()) log('WARN', `PS stderr: ${stderr.trim()}`)
+    const text = stdout.trim()
+    if (!text || text === 'null') return []
+    const parsed = JSON.parse(text)
+    return Array.isArray(parsed) ? parsed : [parsed]
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
 }
-
 
 async function printWindowsUsb(devicePath, commands) {
   log('INFO', `printWindowsUsb → ${devicePath}`)
@@ -296,21 +318,27 @@ async function printWindowsUsb(devicePath, commands) {
   const scriptPath = path.join(dir, 'print.ps1')
   try {
     await writeFile(payloadPath, Buffer.from(commands, 'utf8'))
+    const psDevicePath = devicePath.replace(/'/g, "''")
     const script = `
 Add-Type -TypeDefinition @'
 ${RAW_USB_CS}
 '@
 $bytes = [System.IO.File]::ReadAllBytes(${JSON.stringify(payloadPath)})
-$result = [WinUsbRaw]::SendToDevice(${JSON.stringify(devicePath)}, $bytes)
+$dp = '${psDevicePath}'
+$result = [WinUsbRaw]::SendToDevice($dp, $bytes)
 Write-Output $result
 `
     await writeFile(scriptPath, script, 'utf8')
-    const { stdout } = await run('powershell.exe', [
+    const { stdout, stderr } = await run('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath,
     ])
     const out = stdout.trim()
-    log('INFO', `WinUsbRaw result: ${out}`)
-    if (out.startsWith('ERROR:')) throw new Error(out.replace(/^ERROR:\s*/, ''))
+    log('INFO', `WinUsbRaw result: "${out}"`)
+    if (stderr && stderr.trim()) log('WARN', `PS stderr: ${stderr.trim()}`)
+    if (!out.startsWith('OK:')) {
+      throw new Error(out || stderr.trim() || 'USB write failed with empty output')
+    }
+    return out
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -719,38 +747,111 @@ async function handleRequest(req, res) {
     return
   }
 
-  // ── POST /api/print-auto (Windows: auto USB → spooler fallback) ───────────
+  // ── POST /api/print-auto (Windows & Linux: auto USB → spooler/CUPS fallback) ──
   if (pathname === '/api/print-auto' && method === 'POST') {
-    if (!IS_WIN) {
-      sendJson(res, 400, { ok: false, error: 'Use /api/print on Linux/macOS. /api/print-auto is Windows-only.' }, origin)
-      return
-    }
     try {
       const text = await readBody(req)
       const payload = text ? JSON.parse(text) : {}
       const commands      = typeof payload.commands   === 'string' ? payload.commands   : ''
       const preferredPort = typeof payload.devicePath === 'string' ? payload.devicePath : ''
       if (!commands) throw new Error('Missing "commands" in request body.')
-      log('INFO', `Auto-print: ${commands.length} chars, preferredPort="${preferredPort}"`)
+      log('INFO', `Auto-print: ${commands.length} chars, preferredPort="${preferredPort}" [${PLATFORM}]`)
       let usedMethod = ''
-      // 1. Try the caller's preferred port
-      if (preferredPort) {
-        try { await printWindowsUsb(preferredPort, commands); usedMethod = `usb:${preferredPort}` }
-        catch (e) { log('WARN', `Preferred port failed: ${e.message}`) }
-      }
-      // 2. Try all auto-detected USB ports
-      if (!usedMethod) {
-        for (const dev of await listUsbDevices()) {
-          try { await printWindowsUsb(dev.path, commands); usedMethod = `usb:${dev.path}`; break }
-          catch (e) { log('WARN', `USB ${dev.path} failed: ${e.message}`) }
+
+      if (IS_WIN) {
+        // 1. Try preferred port if it looks like a valid Win32 device path
+        if (preferredPort && preferredPort.startsWith('\\\\?\\')) {
+          try {
+            await printWindowsUsb(preferredPort, commands)
+            usedMethod = `usb:${preferredPort}`
+          } catch (e) {
+            log('WARN', `Preferred port ${preferredPort} failed: ${e.message}`)
+          }
+        }
+
+        // 2. Try all auto-detected USB direct devices
+        if (!usedMethod) {
+          const usbDevices = await listUsbDevices()
+          for (const dev of usbDevices) {
+            if (!dev.path || !dev.path.startsWith('\\\\?\\')) continue
+            try {
+              await printWindowsUsb(dev.path, commands)
+              usedMethod = `usb:${dev.path}`
+              break
+            } catch (e) {
+              log('WARN', `USB device ${dev.path} failed: ${e.message}`)
+            }
+          }
+        }
+
+        // 3. Fall back to Windows spooler only if a real label printer is installed
+        if (!usedMethod) {
+          log('INFO', 'No direct USB write succeeded — checking Windows spooler')
+          const { printers, defaultPrinter } = await listWindowsPrinters()
+          const SKIP = /OneNote|PDF|XPS|Fax|Microsoft|Snip|Send to|Scan/i
+          const PREFER = /Zebra|ZTC|TSC|Dymo|Brother|Bixolon|SATO|Honeywell|label|pos|thermal/i
+          let target = printers.find(p => PREFER.test(p))
+            ?? printers.find(p => !SKIP.test(p))
+
+          const reqPrinter = typeof payload.printer === 'string' ? payload.printer : ''
+          if (reqPrinter && printers.includes(reqPrinter)) target = reqPrinter
+
+          if (target && !SKIP.test(target)) {
+            await printWindows(target, commands)
+            usedMethod = `spooler:${target}`
+          } else {
+            throw new Error(
+              'No physical label printer found. Connected USB printer could not be opened, and no label printer is in Windows Spooler.\n' +
+              'Ensure printer is powered on and plugged in via USB.'
+            )
+          }
+        }
+      } else {
+        // Linux / macOS auto-print
+        // 1. Try preferred device path if /dev/...
+        if (preferredPort && preferredPort.startsWith('/dev/')) {
+          try {
+            await printLinuxUsb(preferredPort, commands)
+            usedMethod = `usb:${preferredPort}`
+          } catch (e) {
+            log('WARN', `Linux preferred port failed: ${e.message}`)
+          }
+        }
+
+        // 2. Try detected Linux USB printer nodes (/dev/usb/lp0, etc.)
+        if (!usedMethod) {
+          const usbDevices = await listUsbDevices()
+          for (const dev of usbDevices) {
+            if (!dev.path || !dev.path.startsWith('/dev/')) continue
+            try {
+              await printLinuxUsb(dev.path, commands)
+              usedMethod = `usb:${dev.path}`
+              break
+            } catch (e) {
+              log('WARN', `Linux USB ${dev.path} failed: ${e.message}`)
+            }
+          }
+        }
+
+        // 3. Fall back to CUPS
+        if (!usedMethod) {
+          log('INFO', 'No direct Linux USB write succeeded — falling back to CUPS')
+          const { printers, defaultPrinter } = await listCupsPrinters()
+          const PREFER = /Zebra|ZTC|TSC|Dymo|Brother|Bixolon|SATO|Honeywell|label|pos|thermal/i
+          const SKIP = /PDF|cups-pdf|Virtual/i
+          let target = printers.find(p => PREFER.test(p))
+            ?? printers.find(p => !SKIP.test(p))
+            ?? defaultPrinter
+          const reqPrinter = typeof payload.printer === 'string' ? payload.printer : ''
+          if (reqPrinter && printers.includes(reqPrinter)) target = reqPrinter
+          if (!target) {
+            throw new Error('No physical label printer found on Linux/macOS (neither /dev/usb/lp* nor CUPS).')
+          }
+          await printCups(target, commands)
+          usedMethod = `cups:${target}`
         }
       }
-      // 3. Fall back to Windows spooler
-      if (!usedMethod) {
-        log('INFO', 'No USB port succeeded — falling back to Windows spooler')
-        const result = await printRaw('default', commands)
-        usedMethod = `spooler:${result.printer}`
-      }
+
       log('OK', `Auto-print done via ${usedMethod}`)
       sendJson(res, 200, { ok: true, method: usedMethod }, origin)
     } catch (err) {
