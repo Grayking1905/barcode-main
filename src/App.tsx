@@ -254,23 +254,43 @@ export default function App() {
       if (!res.ok) throw new Error(`Agent HTTP ${res.status}`)
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'USB device scan failed.')
-      const devices: Array<{path: string; name: string}> = data.devices || []
-      const devicePath = devices.length > 0 ? devices[0].path : ''
-      const deviceName = devices.length > 0 ? devices[0].name : ''
-      const label = deviceName || (devicePath ? `USB: ${devicePath}` : 'Zebra Printer (auto-detect)')
-      updateConn({ kind: 'agent-usb', agentUrl, devicePath }, label)
-      setLang('EPL')
-      setMessage(
-        deviceName
-          ? `✅ Agent connected to ${deviceName}`
-          : devicePath
-            ? `✅ Agent connected to ${devicePath}`
-            : '✅ Agent connected — will auto-detect USB port on print',
-      )
+
+      // Pick the best device: prefer openable (can directly write), then any USB direct
+      const devices: Array<{path: string; name: string; type: string; openable: boolean}> = data.devices || []
+      const openable = devices.filter(d => d.openable && d.type === 'usb-direct')
+      const direct   = devices.filter(d => d.type === 'usb-direct')
+      const best     = openable[0] ?? direct[0] ?? devices[0]
+
+      const devicePath = best?.path  ?? ''
+      const deviceName = best?.name  ?? ''
+      // Don't store a stale path — pass empty so agent always re-discovers at print time
+      // This makes it resilient to printer reconnects / power cycles
+      const storedPath = best?.openable ? devicePath : ''
+
+      const label = deviceName
+        ? `${deviceName}${devices.length > 1 ? ` (+${devices.length - 1} more)` : ''}`
+        : 'Printer (auto-detect)'
+
+      updateConn({ kind: 'agent-usb', agentUrl, devicePath: storedPath }, label)
+
+      // Auto-detect language from printer name
+      const nameLower = deviceName.toLowerCase()
+      if (/\bepl\b/.test(nameLower)) setLang('EPL')
+      else if (/\btspl\b|tsc/.test(nameLower)) setLang('TSPL')
+      else setLang('EPL') // default for Zebra GC420t
+
+      const status = best?.openable
+        ? `✅ Ready to print to: ${deviceName}`
+        : devices.length > 0
+          ? `⚡ Agent connected — ${devices.length} printer(s) found, will auto-detect on print`
+          : '⚡ Agent connected — no USB printers detected yet (will retry on print)'
+
+      setMessage(status)
     } catch (err) {
       setPhase('disconnected')
       setMessage(
-        'Could not reach local print bridge on http://127.0.0.1:47474. Run "node agent/labelpress-agent.mjs" to start it.',
+        '❌ Could not reach local print bridge on http://127.0.0.1:47474.\n' +
+        'Run: node agent/labelpress-agent.mjs --allow-origin "https://barcode-main.vercel.app"',
       )
     }
   }, [])
@@ -324,6 +344,9 @@ export default function App() {
         })
         const data = await res.json()
         if (!data.ok) throw new Error(data.error || 'Print failed.')
+        const methodLabel = data.method === 'usb-direct' ? 'Direct USB' : (data.method === 'cups' ? 'CUPS' : 'Spooler')
+        setMessage(`✓ Printed successfully via ${methodLabel}${data.name ? ` (${data.name})` : ''}!`)
+        return
       } else if (c.kind === 'system') {
         const res = await fetch(`${c.agentUrl}/api/print`, {
           method: 'POST',
@@ -332,6 +355,8 @@ export default function App() {
         })
         const data = await res.json()
         if (!data.ok) throw new Error(data.error || 'Print failed.')
+        setMessage(`✓ Printed via Spooler (${c.printerName})!`)
+        return
       }
       setMessage('✓ Label sent to printer.')
     } catch (err) {

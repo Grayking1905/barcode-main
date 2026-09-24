@@ -1,9 +1,9 @@
 #!/bin/bash
-# LabelPress Agent v2.0 - Linux / macOS startup script
+# LabelPress Agent v3.0 - Universal Linux / macOS / Windows startup script
 # Usage: ./start-agent.sh
 #        ./start-agent.sh --port 47474 --allow-origin "https://your-app.vercel.app"
 #
-# === Linux USB Printer Access (run ONCE before first use) ===
+# === Linux USB Printer Access (run ONCE before first use if needed) ===
 #
 # If /api/usb-devices returns devices but /api/print-usb gives "Permission denied":
 #
@@ -18,8 +18,10 @@
 #   sudo modprobe usblp   # re-enable it for agent-based raw access
 
 echo ""
-echo "  LabelPress Agent v2.0"
-echo "  ─────────────────────"
+echo "  LabelPress Agent v3.0 (Universal)"
+echo "  ──────────────────────────────────"
+echo "  Cross-platform: Linux, macOS, Windows"
+echo "  Direct USB + Spooler / CUPS raw printing"
 echo ""
 
 # Check Node.js
