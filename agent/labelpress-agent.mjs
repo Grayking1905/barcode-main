@@ -443,10 +443,10 @@ async function unixListUsbPrinters() {
   const devices = []
   const seen    = new Set()
 
-  function add(p, type, name) {
+  function add(p, type, name, openable = true, note = '') {
     if (!seen.has(p)) {
       seen.add(p)
-      devices.push({ path: p, name, type, openable: true, method: type })
+      devices.push({ path: p, name, type, openable, method: type, note })
     }
   }
 
@@ -455,9 +455,14 @@ async function unixListUsbPrinters() {
     const entries = await readdir('/dev/usb').catch(() => [])
     for (const e of entries.filter(e => e.startsWith('lp'))) {
       const p = `/dev/usb/${e}`
-      // Verify we can actually access it
       const writable = await access(p, fsConstants.W_OK).then(() => true).catch(() => false)
-      if (writable) add(p, 'usblp', `USB Printer (/dev/usb/${e})`)
+      add(
+        p,
+        'usblp',
+        `USB Printer (/dev/usb/${e})`,
+        writable,
+        writable ? 'Ready' : 'Permission needed: sudo usermod -a -G lp $USER'
+      )
     }
   } catch { /* /dev/usb not present */ }
 
@@ -467,7 +472,13 @@ async function unixListUsbPrinters() {
     for (const e of entries.filter(e => /^lp\d+$/.test(e))) {
       const p = `/dev/${e}`
       const writable = await access(p, fsConstants.W_OK).then(() => true).catch(() => false)
-      if (writable) add(p, 'lp', `Printer port (/dev/${e})`)
+      add(
+        p,
+        'lp',
+        `Printer port (/dev/${e})`,
+        writable,
+        writable ? 'Ready' : 'Permission needed: sudo usermod -a -G lp $USER'
+      )
     }
   } catch { /* ignore */ }
 
@@ -729,13 +740,14 @@ async function autoPrint(commands, preferredDevicePath = '') {
 const MAX_BODY = 500_000
 
 function corsHeaders(origin) {
-  const allow = ALLOWED_ORIGIN === '*' ? '*' : (origin || ALLOWED_ORIGIN)
+  const allow = ALLOWED_ORIGIN === '*' ? (origin || '*') : ALLOWED_ORIGIN
   return {
-    'Access-Control-Allow-Origin':  allow,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Max-Age':       '86400',
-    'Vary': 'Origin',
+    'Access-Control-Allow-Origin':          allow,
+    'Access-Control-Allow-Methods':         'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers':         'Content-Type, Authorization, X-Requested-With, *',
+    'Access-Control-Allow-Private-Network': 'true',
+    'Access-Control-Max-Age':               '86400',
+    'Vary':                                 'Origin',
   }
 }
 

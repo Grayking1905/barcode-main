@@ -217,18 +217,36 @@ export default function App() {
     }
   }, [])
 
-  // ── Connect System Printer (via Local Agent / Spooler) ──────────────────────
+  // ── Helper to find working Agent URL (checks 127.0.0.1, localhost, custom IP) ─
+  const getAgentUrl = useCallback(async (): Promise<string> => {
+    const custom = localStorage.getItem('lp_agent_url')
+    const candidates = [
+      custom,
+      'http://127.0.0.1:47474',
+      'http://localhost:47474',
+    ].filter(Boolean) as string[]
+
+    for (const url of candidates) {
+      try {
+        const res = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(1200) })
+        if (res.ok) return url
+      } catch {}
+    }
+    return custom || 'http://127.0.0.1:47474'
+  }, [])
+
+  // ── Connect System Printer (via Local Agent / Spooler / CUPS) ───────────────
 
   const connectSystem = useCallback(async () => {
     setMessage('')
     setPhase('connecting-system')
-    const agentUrl = 'http://127.0.0.1:47474'
+    const agentUrl = await getAgentUrl()
     try {
       const res = await fetch(`${agentUrl}/api/printers`)
       if (!res.ok) throw new Error(`Agent HTTP ${res.status}`)
       const data = await res.json()
       if (!data.ok || !Array.isArray(data.printers) || data.printers.length === 0) {
-        throw new Error(data.error || 'No printers detected in Windows spooler.')
+        throw new Error(data.error || 'No system printers detected.')
       }
       setSystemPrinters(data.printers)
       const selected = data.defaultPrinter || data.printers[0]
@@ -238,17 +256,19 @@ export default function App() {
     } catch (err) {
       setPhase('disconnected')
       setMessage(
-        'Could not reach local print bridge on http://127.0.0.1:47474. Double-click start-agent.bat or run "npm run agent" to enable Windows spooler printing.',
+        'Could not reach local print bridge on ' + agentUrl + '.\n' +
+        '• Windows: Run start-agent.bat\n' +
+        '• Linux: Run ./start-agent.sh (or bash start-agent.sh)',
       )
     }
-  }, [])
+  }, [getAgentUrl])
 
   // ── Connect Agent Direct USB (no driver change needed) ──────────────────────
 
   const connectAgentUsb = useCallback(async () => {
     setMessage('')
     setPhase('connecting-agent-usb')
-    const agentUrl = 'http://127.0.0.1:47474'
+    const agentUrl = await getAgentUrl()
     try {
       const res = await fetch(`${agentUrl}/api/usb-devices`)
       if (!res.ok) throw new Error(`Agent HTTP ${res.status}`)
@@ -256,7 +276,7 @@ export default function App() {
       if (!data.ok) throw new Error(data.error || 'USB device scan failed.')
 
       // Pick the best device: prefer openable (can directly write), then any USB direct
-      const devices: Array<{path: string; name: string; type: string; openable: boolean}> = data.devices || []
+      const devices: Array<{path: string; name: string; type: string; openable: boolean; note?: string}> = data.devices || []
       const openable = devices.filter(d => d.openable && d.type === 'usb-direct')
       const direct   = devices.filter(d => d.type === 'usb-direct')
       const best     = openable[0] ?? direct[0] ?? devices[0]
@@ -289,11 +309,14 @@ export default function App() {
     } catch (err) {
       setPhase('disconnected')
       setMessage(
-        '❌ Could not reach local print bridge on http://127.0.0.1:47474.\n' +
-        'Run: node agent/labelpress-agent.mjs --allow-origin "https://barcode-main.vercel.app"',
+        '❌ Could not reach local print bridge on ' + agentUrl + '.\n' +
+        '• Make sure the agent is running in terminal:\n' +
+        '    Linux:   chmod +x start-agent.sh && ./start-agent.sh\n' +
+        '    Windows: double-click start-agent.bat\n' +
+        '• In browser: ensure you allow access to local network if prompted.',
       )
     }
-  }, [])
+  }, [getAgentUrl])
 
   // ── Switch System Printer ───────────────────────────────────────────────────
 
