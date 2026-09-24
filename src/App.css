@@ -178,6 +178,22 @@
   to   { transform: scale(1);   opacity: 1 }
 }
 
+.connect-btn-primary {
+  border-color: #16a37c !important;
+  background: rgba(22, 163, 124, 0.06) !important;
+  box-shadow: 0 0 0 2px rgba(22, 163, 124, 0.25) !important;
+}
+
+.connect-btn-primary:hover {
+  background: rgba(22, 163, 124, 0.13) !important;
+  box-shadow: 0 0 0 3px rgba(22, 163, 124, 0.4) !important;
+}
+
+.connect-btn-tag-green {
+  background: #16a37c;
+  color: #fff;
+}
+
 .connect-btn-icon {
   font-size: 1.55rem;
   flex-shrink: 0;

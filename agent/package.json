@@ -1,0 +1,9 @@
+{
+  "name": "labelpress-agent",
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node labelpress-agent.mjs",
+    "agent": "node labelpress-agent.mjs"
+  }
+}

@@ -135,12 +135,14 @@ type ConnSource =
   | { kind: 'usb'; device: USBDevice }
   | { kind: 'serial'; port: SerialPort }
   | { kind: 'system'; printerName: string; agentUrl: string }
+  | { kind: 'agent-usb'; agentUrl: string; devicePath: string }
 
 type Phase =
   | 'disconnected'
   | 'connecting-usb'
   | 'connecting-serial'
   | 'connecting-system'
+  | 'connecting-agent-usb'
   | 'connected'
   | 'printing'
 
@@ -241,6 +243,35 @@ export default function App() {
     }
   }, [])
 
+  // ── Connect Agent Direct USB (no driver change needed) ──────────────────────
+
+  const connectAgentUsb = useCallback(async () => {
+    setMessage('')
+    setPhase('connecting-agent-usb')
+    const agentUrl = 'http://127.0.0.1:47474'
+    try {
+      const res = await fetch(`${agentUrl}/api/usb-devices`)
+      if (!res.ok) throw new Error(`Agent HTTP ${res.status}`)
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.error || 'USB device scan failed.')
+      const devices: Array<{path: string; name: string}> = data.devices || []
+      const devicePath = devices.length > 0 ? devices[0].path : ''
+      const label = devicePath ? `USB Port: ${devicePath}` : 'Zebra Printer (auto-detect)'
+      updateConn({ kind: 'agent-usb', agentUrl, devicePath }, label)
+      setLang('EPL')
+      setMessage(
+        devicePath
+          ? `✅ Agent connected to ${devicePath}`
+          : '✅ Agent connected — will auto-detect USB port on print',
+      )
+    } catch (err) {
+      setPhase('disconnected')
+      setMessage(
+        'Could not reach local print bridge on http://127.0.0.1:47474. Run "node agent/labelpress-agent.mjs" to start it.',
+      )
+    }
+  }, [])
+
   // ── Switch System Printer ───────────────────────────────────────────────────
 
   const handleSystemPrinterChange = (name: string) => {
@@ -282,6 +313,14 @@ export default function App() {
         await sendUSB(c.device, commands)
       } else if (c.kind === 'serial') {
         await sendSerial(c.port, commands)
+      } else if (c.kind === 'agent-usb') {
+        const res = await fetch(`${c.agentUrl}/api/print-auto`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ commands, devicePath: c.devicePath }),
+        })
+        const data = await res.json()
+        if (!data.ok) throw new Error(data.error || 'Print failed.')
       } else if (c.kind === 'system') {
         const res = await fetch(`${c.agentUrl}/api/print`, {
           method: 'POST',
@@ -303,7 +342,8 @@ export default function App() {
 
   const isConnected = phase === 'connected' || phase === 'printing'
   const isConnecting =
-    phase === 'connecting-usb' || phase === 'connecting-serial' || phase === 'connecting-system'
+    phase === 'connecting-usb' || phase === 'connecting-serial' ||
+    phase === 'connecting-system' || phase === 'connecting-agent-usb'
   const noBrowserSupport = !supportsUSB && !supportsSerial
 
   return (
@@ -362,7 +402,27 @@ export default function App() {
                 <span className="connect-btn-arrow">→</span>
               </button>
 
-              {/* Option 2: System Printer via Spooler */}
+              {/* Option 2: Agent Direct USB — RAW \\.\USB001 via local agent */}
+              <button
+                type="button"
+                className="connect-btn connect-btn-primary"
+                id="connect-agent-usb-btn"
+                onClick={() => void connectAgentUsb()}
+              >
+                <span className="connect-btn-icon">⚡</span>
+                <span className="connect-btn-label">
+                  <strong>
+                    Agent Direct USB
+                    <span className="connect-btn-tag connect-btn-tag-green">Recommended for Windows</span>
+                  </strong>
+                  <small>
+                    🖨️ Writes raw ESC/ZPL directly to \\.\ USB port — no WinUSB or Zadig needed
+                  </small>
+                </span>
+                <span className="connect-btn-arrow">→</span>
+              </button>
+
+              {/* Option 3: System Printer via Spooler */}
               <button
                 type="button"
                 className="connect-btn"
